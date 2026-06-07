@@ -14,6 +14,7 @@ from starlette.responses import Response
 from hearforspeech_server import __version__
 from hearforspeech_server.analysis import analyze_recording
 from hearforspeech_server.analysis.audio_io import extension_for_upload
+from hearforspeech_server.analysis.calibration import build_calibration_profile
 from hearforspeech_server.analysis.parselmouth_metrics import parselmouth_engine_info
 from hearforspeech_server.analysis.pipeline import CLINICAL_NOTICE
 from hearforspeech_server.analysis.speech_sound_patterns import (
@@ -26,10 +27,13 @@ from hearforspeech_server.schemas import (
     AssessmentSessionAnalysisResult,
     AssessmentSessionInput,
     AssessmentSessionItemResult,
+    CalibrationProfileRequest,
+    CalibrationProfileResponse,
     CapabilitiesResponse,
     CapabilityLimits,
     EngineInfo,
     SpeechSoundAnalysisResult,
+    SpeechSoundReviewLabel,
 )
 from hearforspeech_server.settings import Settings, get_settings
 
@@ -99,6 +103,14 @@ def capabilities(settings: SettingsDependency) -> CapabilitiesResponse:
                     "acoustics, and optional phone candidates."
                 ),
             ),
+            EngineInfo(
+                name="slp-calibration",
+                available=True,
+                note=(
+                    "Uses SLP-confirmed local review labels to tune candidate ranking. "
+                    "No server-side label storage."
+                ),
+            ),
         ],
         endpoints=[
             "GET /health",
@@ -106,6 +118,7 @@ def capabilities(settings: SettingsDependency) -> CapabilitiesResponse:
             "POST /v1/analysis/parselmouth",
             "POST /v1/analysis/speech-sound-patterns",
             "POST /v1/analysis/assessment-session",
+            "POST /v1/analysis/calibration-profile",
         ],
         limits=CapabilityLimits(
             max_upload_mb=settings.max_upload_mb,
@@ -121,6 +134,10 @@ def capabilities(settings: SettingsDependency) -> CapabilitiesResponse:
         workflow_notes=[
             "Use scripted-prompt uploads for best future forced-alignment support.",
             "Speech-sound pattern candidates require SLP confirmation before documentation.",
+            (
+                "Send local SLP review labels as calibration_json to tune ranking "
+                "without server storage."
+            ),
             "Use returned review_facts as supporting facts for clinician review, not conclusions.",
             "Temporary processing only; do not send audio without consent.",
         ],
@@ -167,6 +184,21 @@ def attach_request_id(result: AnalysisResult, request_id: str) -> AnalysisResult
     return result.model_copy(update={"request_id": request_id})
 
 
+def parse_calibration_labels(calibration_json: str | None) -> list[SpeechSoundReviewLabel] | None:
+    if not calibration_json:
+        return None
+    try:
+        payload = json.loads(calibration_json)
+        if isinstance(payload, list):
+            payload = {"labels": payload}
+        return CalibrationProfileRequest.model_validate(payload).labels
+    except (json.JSONDecodeError, ValidationError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="calibration_json must be valid JSON with a labels array.",
+        ) from exc
+
+
 async def analyze_upload(
     file: UploadFile,
     *,
@@ -210,6 +242,7 @@ async def analyze_upload_speech_sound_patterns(
     *,
     settings: Settings,
     prompt_text: str,
+    calibration_labels: list[SpeechSoundReviewLabel] | None = None,
 ) -> SpeechSoundAnalysisResult:
     max_bytes = settings.max_upload_mb * 1024 * 1024
     suffix = extension_for_upload(file.filename, file.content_type)
@@ -233,6 +266,7 @@ async def analyze_upload_speech_sound_patterns(
             prompt_text=prompt_text,
             filename=file.filename or "recording",
             content_type=file.content_type,
+            calibration_labels=calibration_labels,
         )
     finally:
         await file.close()
@@ -268,15 +302,32 @@ async def run_speech_sound_pattern_analysis(
     settings: SettingsDependency,
     prompt_text: Annotated[str, Form()] = "",
     retention_policy: Annotated[str, Form()] = "temporary",
+    calibration_json: Annotated[str | None, Form()] = None,
 ) -> SpeechSoundAnalysisResult:
     validate_analysis_request(consent_confirmed, retention_policy)
+    calibration_labels = parse_calibration_labels(calibration_json)
 
     result = await analyze_upload_speech_sound_patterns(
         file,
         settings=settings,
         prompt_text=prompt_text,
+        calibration_labels=calibration_labels,
     )
     return result.model_copy(update={"request_id": request.state.request_id})
+
+
+@app.post("/v1/analysis/calibration-profile", response_model=CalibrationProfileResponse)
+async def run_calibration_profile(
+    request: Request,
+    payload: CalibrationProfileRequest,
+    _: Annotated[None, Depends(require_api_key)],
+) -> CalibrationProfileResponse:
+    del request
+    return CalibrationProfileResponse(
+        status="complete",
+        profile=build_calibration_profile(payload.labels),
+        clinical_notice=CLINICAL_NOTICE,
+    )
 
 
 @app.post("/v1/analysis/assessment-session", response_model=AssessmentSessionAnalysisResult)

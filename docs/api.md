@@ -54,6 +54,7 @@ Synchronous endpoint for one scripted recording. Use this for the app’s simple
 - `prompt_text`: the exact words, sentence, or `/phoneme/` targets the patient read or imitated.
 - `consent_confirmed`: must be `true`.
 - `retention_policy`: currently only `temporary`.
+- `calibration_json`: optional JSON with a `labels` array of SLP-confirmed local candidate reviews.
 
 ### Response
 
@@ -64,6 +65,7 @@ Returns:
 - `metrics`
 - `possible_errors`
 - `review_facts`
+- `calibration_profile`
 - `warnings`
 - `clinician_summary`
 - `clinical_notice`
@@ -78,3 +80,39 @@ Each candidate can include:
 - `category`: broad inventory category such as residual sound, sibilant, or cluster.
 - `score`: ranking score from 0 to 1 for ordering review items; it is not an accuracy percentage.
 - `evidence`: plain-language facts the clinician can use while replaying the sample.
+
+`calibration_profile` is returned only when `calibration_json` is supplied. It summarizes local SLP review labels and any small score-ranking adjustments used for this request. The server does not store calibration labels.
+
+## `POST /v1/analysis/calibration-profile`
+
+Synchronous endpoint for summarizing local SLP candidate-review labels without uploading audio.
+
+### JSON body
+
+```json
+{
+  "labels": [
+    {
+      "target": "/s/",
+      "target_word": "sun",
+      "word_position": "initial",
+      "candidate_error_type": "possible_distortion",
+      "candidate_score": 0.54,
+      "slp_decision": "confirmed"
+    }
+  ]
+}
+```
+
+### Response
+
+Returns:
+
+- `status`
+- `profile.label_count`
+- `profile.reviewed_count`
+- `profile.target_stats`
+- `profile.summary`
+- `clinical_notice`
+
+Use this endpoint to show how much local SLP-labeled data exists and whether it is enough to tune analyzer review ranking. It does not validate speech sound accuracy by itself.

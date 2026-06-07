@@ -37,7 +37,9 @@ def test_capabilities() -> None:
     assert "POST /v1/analysis/parselmouth" in payload["endpoints"]
     assert "POST /v1/analysis/speech-sound-patterns" in payload["endpoints"]
     assert "POST /v1/analysis/assessment-session" in payload["endpoints"]
+    assert "POST /v1/analysis/calibration-profile" in payload["endpoints"]
     assert any(engine["name"] == "speech-sound-patterns" for engine in payload["engines"])
+    assert any(engine["name"] == "slp-calibration" for engine in payload["engines"])
     assert payload["limits"]["max_upload_mb"] > 0
     assert payload["limits"]["max_batch_files"] > 0
     assert payload["workflow_notes"]
@@ -97,6 +99,94 @@ def test_speech_sound_pattern_analysis_returns_review_candidates() -> None:
     assert any(fact["label"] == "Expected speech targets" for fact in payload["review_facts"])
     assert "SLP" in payload["clinician_summary"]
     assert "diagnose" in payload["clinical_notice"]
+
+
+def test_calibration_profile_summarizes_slp_labels() -> None:
+    response = client.post(
+        "/v1/analysis/calibration-profile",
+        json={
+            "labels": [
+                {
+                    "target": "/s/",
+                    "target_word": "sun",
+                    "word_position": "initial",
+                    "candidate_error_type": "possible_distortion",
+                    "candidate_score": 0.54,
+                    "slp_decision": "confirmed",
+                },
+                {
+                    "target": "/s/",
+                    "target_word": "sun",
+                    "word_position": "initial",
+                    "candidate_error_type": "possible_distortion",
+                    "candidate_score": 0.51,
+                    "slp_decision": "confirmed",
+                },
+                {
+                    "target": "/r/",
+                    "target_word": "red",
+                    "word_position": "initial",
+                    "candidate_error_type": "needs_review",
+                    "candidate_score": 0.32,
+                    "slp_decision": "ruled_out",
+                },
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "complete"
+    assert payload["profile"]["label_count"] == 3
+    assert payload["profile"]["reviewed_count"] == 3
+    assert payload["profile"]["target_stats"]
+    assert any(
+        stat["target"] == "/s/" and stat["suggested_score_adjustment"] > 0
+        for stat in payload["profile"]["target_stats"]
+    )
+    assert "diagnose" in payload["clinical_notice"]
+
+
+def test_speech_sound_pattern_analysis_accepts_calibration_json() -> None:
+    labels = {
+        "labels": [
+            {
+                "target": "/s/",
+                "target_word": "sun",
+                "word_position": "initial",
+                "candidate_error_type": "possible_distortion",
+                "candidate_score": 0.54,
+                "slp_decision": "confirmed",
+            },
+            {
+                "target": "/s/",
+                "target_word": "sun",
+                "word_position": "initial",
+                "candidate_error_type": "possible_distortion",
+                "candidate_score": 0.51,
+                "slp_decision": "confirmed",
+            },
+        ]
+    }
+    response = client.post(
+        "/v1/analysis/speech-sound-patterns",
+        data={
+            "prompt_text": "Say sun, zoo, shoe.",
+            "consent_confirmed": "true",
+            "retention_policy": "temporary",
+            "calibration_json": json.dumps(labels),
+        },
+        files={"file": ("sample.wav", make_wav_bytes(duration_seconds=1.0), "audio/wav")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["calibration_profile"]["reviewed_count"] == 2
+    assert any(fact["label"] == "SLP calibration labels" for fact in payload["review_facts"])
+    assert any(
+        "Local SLP review labels adjusted this candidate" in " ".join(candidate["evidence"])
+        for candidate in payload["possible_errors"]
+    )
 
 
 def test_assessment_session_analysis_returns_line_results() -> None:

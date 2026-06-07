@@ -76,6 +76,48 @@ class SpeechSoundCandidate(BaseModel):
     review_prompt: str
 
 
+class SpeechSoundReviewLabel(BaseModel):
+    target: str
+    target_word: str | None = None
+    word_position: str | None = None
+    category: str | None = None
+    candidate_error_type: str
+    candidate_score: float = Field(ge=0, le=1)
+    slp_decision: Literal["confirmed", "ruled_out", "uncertain"]
+    confirmed_error_type: str | None = None
+    notes: str | None = None
+    created_at: str | None = None
+
+
+class CalibrationTargetStats(BaseModel):
+    key: str
+    target: str
+    word_position: str | None = None
+    error_type: str
+    reviewed: int
+    confirmed: int
+    ruled_out: int
+    precision_estimate: float = Field(ge=0, le=1)
+    suggested_score_adjustment: float
+
+
+class CalibrationProfile(BaseModel):
+    label_count: int
+    reviewed_count: int
+    target_stats: list[CalibrationTargetStats] = Field(default_factory=list)
+    summary: str
+
+
+class CalibrationProfileRequest(BaseModel):
+    labels: list[SpeechSoundReviewLabel] = Field(default_factory=list)
+
+
+class CalibrationProfileResponse(BaseModel):
+    status: Literal["complete"]
+    profile: CalibrationProfile
+    clinical_notice: str
+
+
 class AnalysisResult(BaseModel):
     job_id: str
     request_id: str | None = None
@@ -102,6 +144,7 @@ class SpeechSoundAnalysisResult(BaseModel):
     metrics: AcousticMetrics | None
     possible_errors: list[SpeechSoundCandidate] = Field(default_factory=list)
     review_facts: list[AnalysisFact] = Field(default_factory=list)
+    calibration_profile: CalibrationProfile | None = None
     warnings: list[str] = Field(default_factory=list)
     clinician_summary: str
     clinical_notice: str
