@@ -43,3 +43,29 @@ Returns:
 - `clinical_notice`
 
 The app should import this as editable supporting data, not as a diagnosis.
+
+## `POST /v1/analysis/speech-sound-patterns`
+
+Synchronous endpoint for one scripted recording. Use this for the app’s simple **Record → Stop → Analyze** workflow.
+
+### Form fields
+
+- `file`: audio upload. WAV/WebM/MP3/M4A/OGG are accepted when conversion support is available.
+- `prompt_text`: the exact words, sentence, or `/phoneme/` targets the patient read or imitated.
+- `consent_confirmed`: must be `true`.
+- `retention_policy`: currently only `temporary`.
+
+### Response
+
+Returns:
+
+- `job_id`
+- `engines`
+- `metrics`
+- `possible_errors`
+- `review_facts`
+- `warnings`
+- `clinician_summary`
+- `clinical_notice`
+
+`possible_errors` are conservative candidates for SLP review, such as possible distortion, omission, substitution, cluster reduction, or recording-quality/intelligibility flags. They are not diagnoses and should be confirmed or ignored by the clinician before documentation.

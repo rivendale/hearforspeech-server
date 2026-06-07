@@ -1,25 +1,26 @@
 ## Summary
 
-Adds GitHub Actions deployment automation for the Fly-hosted HearForSpeech analysis API.
+Adds a speech-sound pattern analysis endpoint for the simple **Record → Stop → Analyze** workflow.
 
 ## What changed
 
-- Adds `.github/workflows/fly-deploy.yml`.
-- Deploys automatically on pushes to `main`.
-- Allows manual deployment through `workflow_dispatch`.
-- Uses `flyctl deploy --remote-only` and `fly.toml`.
-- Verifies production health at `https://api.hearforspeech.com/health`.
-- Documents the required `FLY_API_TOKEN` GitHub secret.
+- Adds `POST /v1/analysis/speech-sound-patterns`.
+- Returns conservative `possible_errors` such as possible distortion, omission, substitution, cluster reduction, or recording-quality/intelligibility flags.
+- Parses expected targets from scripted prompts and common adolescent speech-inventory words.
+- Includes Parselmouth/basic acoustic metrics as review facts.
+- Reports MFA and Allosaurus capability status.
+- Uses Allosaurus phone candidates when Allosaurus is installed, while keeping output beta/exploratory and SLP-reviewed.
+- Updates capabilities, API docs, README, and tests.
 
 ## Why this helps SLPs
 
-Backend analysis improvements become available through the app immediately after merge, instead of relying on a manual deploy step.
+The frontend can now present “possible speech-sound errors” immediately after recording, instead of only showing acoustic metrics. The clinician can replay the sample and confirm or ignore each candidate.
 
 ## Data/privacy notes
 
-- No API behavior, data retention, or analysis processing changes are included.
-- The service remains temporary-processing only by default.
-- No cloud record storage, analytics, or external AI calls are added.
+- Upload handling remains consent-gated and temporary-processing only.
+- No cloud record storage, third-party analytics, or external AI calls are added.
+- Candidate error patterns are not diagnoses, eligibility decisions, or replacements for SLP judgment.
 
 ## Testing performed
 
@@ -28,5 +29,6 @@ Backend analysis improvements become available through the app immediately after
 
 ## Known limitations / follow-up ideas
 
-- The GitHub repo needs a `FLY_API_TOKEN` secret before the workflow can deploy.
-- Future work could add deployment status badges and post-deploy capability smoke tests.
+- MFA alignment requires acoustic models/dictionaries before true timestamps can be added.
+- Allosaurus output is optional and exploratory; production deployments need dependency/model validation.
+- Future work can add target-specific acoustic models for /r/, sibilants, clusters, and phonological-process summaries.

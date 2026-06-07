@@ -16,6 +16,11 @@ from hearforspeech_server.analysis import analyze_recording
 from hearforspeech_server.analysis.audio_io import extension_for_upload
 from hearforspeech_server.analysis.parselmouth_metrics import parselmouth_engine_info
 from hearforspeech_server.analysis.pipeline import CLINICAL_NOTICE
+from hearforspeech_server.analysis.speech_sound_patterns import (
+    allosaurus_engine_info,
+    analyze_speech_sound_patterns,
+    mfa_engine_info,
+)
 from hearforspeech_server.schemas import (
     AnalysisResult,
     AssessmentSessionAnalysisResult,
@@ -24,6 +29,7 @@ from hearforspeech_server.schemas import (
     CapabilitiesResponse,
     CapabilityLimits,
     EngineInfo,
+    SpeechSoundAnalysisResult,
 )
 from hearforspeech_server.settings import Settings, get_settings
 
@@ -83,21 +89,22 @@ def capabilities(settings: SettingsDependency) -> CapabilitiesResponse:
         version=__version__,
         engines=[
             parselmouth_engine_info(),
+            mfa_engine_info(),
+            allosaurus_engine_info(),
             EngineInfo(
-                name="mfa",
-                available=False,
-                note="Planned for scripted prompt forced alignment.",
-            ),
-            EngineInfo(
-                name="allosaurus",
-                available=False,
-                note="Planned beta/exploratory phone-candidate mode.",
+                name="speech-sound-patterns",
+                available=True,
+                note=(
+                    "Conservative candidate error-pattern review from prompt targets, "
+                    "acoustics, and optional phone candidates."
+                ),
             ),
         ],
         endpoints=[
             "GET /health",
             "GET /v1/capabilities",
             "POST /v1/analysis/parselmouth",
+            "POST /v1/analysis/speech-sound-patterns",
             "POST /v1/analysis/assessment-session",
         ],
         limits=CapabilityLimits(
@@ -113,6 +120,7 @@ def capabilities(settings: SettingsDependency) -> CapabilitiesResponse:
         ),
         workflow_notes=[
             "Use scripted-prompt uploads for best future forced-alignment support.",
+            "Speech-sound pattern candidates require SLP confirmation before documentation.",
             "Use returned review_facts as supporting facts for clinician review, not conclusions.",
             "Temporary processing only; do not send audio without consent.",
         ],
@@ -197,6 +205,44 @@ async def analyze_upload(
                 pass
 
 
+async def analyze_upload_speech_sound_patterns(
+    file: UploadFile,
+    *,
+    settings: Settings,
+    prompt_text: str,
+) -> SpeechSoundAnalysisResult:
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+    suffix = extension_for_upload(file.filename, file.content_type)
+    total_bytes = 0
+    temp_path: Path | None = None
+
+    try:
+        with NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_path = Path(temp_file.name)
+            while chunk := await file.read(1024 * 1024):
+                total_bytes += len(chunk)
+                if total_bytes > max_bytes:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=f"Upload exceeds {settings.max_upload_mb} MB limit.",
+                    )
+                temp_file.write(chunk)
+
+        return analyze_speech_sound_patterns(
+            temp_path,
+            prompt_text=prompt_text,
+            filename=file.filename or "recording",
+            content_type=file.content_type,
+        )
+    finally:
+        await file.close()
+        if temp_path is not None:
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 @app.post("/v1/analysis/parselmouth", response_model=AnalysisResult)
 async def run_parselmouth_analysis(
     request: Request,
@@ -211,6 +257,26 @@ async def run_parselmouth_analysis(
 
     result = await analyze_upload(file, settings=settings, prompt_text=prompt_text)
     return attach_request_id(result, request.state.request_id)
+
+
+@app.post("/v1/analysis/speech-sound-patterns", response_model=SpeechSoundAnalysisResult)
+async def run_speech_sound_pattern_analysis(
+    request: Request,
+    file: Annotated[UploadFile, File()],
+    consent_confirmed: Annotated[bool, Form()],
+    _: Annotated[None, Depends(require_api_key)],
+    settings: SettingsDependency,
+    prompt_text: Annotated[str, Form()] = "",
+    retention_policy: Annotated[str, Form()] = "temporary",
+) -> SpeechSoundAnalysisResult:
+    validate_analysis_request(consent_confirmed, retention_policy)
+
+    result = await analyze_upload_speech_sound_patterns(
+        file,
+        settings=settings,
+        prompt_text=prompt_text,
+    )
+    return result.model_copy(update={"request_id": request.state.request_id})
 
 
 @app.post("/v1/analysis/assessment-session", response_model=AssessmentSessionAnalysisResult)

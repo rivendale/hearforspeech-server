@@ -53,6 +53,25 @@ class AnalysisFact(BaseModel):
     caution: str | None = None
 
 
+class SpeechSoundCandidate(BaseModel):
+    target: str
+    expected: str | None = None
+    observed: str | None = None
+    error_type: Literal[
+        "possible_substitution",
+        "possible_omission",
+        "possible_distortion",
+        "possible_cluster_reduction",
+        "possible_rate_or_intelligibility",
+        "needs_review",
+    ]
+    confidence: Literal["low", "medium", "high"]
+    evidence: list[str] = Field(default_factory=list)
+    start_seconds: float | None = None
+    end_seconds: float | None = None
+    review_prompt: str
+
+
 class AnalysisResult(BaseModel):
     job_id: str
     request_id: str | None = None
@@ -64,6 +83,22 @@ class AnalysisResult(BaseModel):
     metrics: AcousticMetrics | None
     review_facts: list[AnalysisFact] = Field(default_factory=list)
     warnings: list[str]
+    clinician_summary: str
+    clinical_notice: str
+
+
+class SpeechSoundAnalysisResult(BaseModel):
+    job_id: str
+    request_id: str | None = None
+    status: Literal["complete", "failed"]
+    prompt_text: str
+    filename: str
+    content_type: str | None
+    engines: list[EngineInfo]
+    metrics: AcousticMetrics | None
+    possible_errors: list[SpeechSoundCandidate] = Field(default_factory=list)
+    review_facts: list[AnalysisFact] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     clinician_summary: str
     clinical_notice: str
 
