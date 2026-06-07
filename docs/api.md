@@ -69,3 +69,12 @@ Returns:
 - `clinical_notice`
 
 `possible_errors` are conservative candidates for SLP review, such as possible distortion, omission, substitution, cluster reduction, or recording-quality/intelligibility flags. They are not diagnoses and should be confirmed or ignored by the clinician before documentation.
+
+Each candidate can include:
+
+- `target`: expected sound or sound class, such as `/r/` or `cluster`.
+- `target_word`: scripted word that triggered the review item when available.
+- `word_position`: initial, medial, final, vocalic, or cluster context when available.
+- `category`: broad inventory category such as residual sound, sibilant, or cluster.
+- `score`: ranking score from 0 to 1 for ordering review items; it is not an accuracy percentage.
+- `evidence`: plain-language facts the clinician can use while replaying the sample.

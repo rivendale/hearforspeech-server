@@ -82,6 +82,25 @@ def build_review_facts(metrics: AcousticMetrics | None, engine: EngineInfo) -> l
     return facts
 
 
+def merge_basic_waveform_metrics(
+    primary: AcousticMetrics,
+    waveform: AcousticMetrics,
+) -> AcousticMetrics:
+    return primary.model_copy(
+        update={
+            "rms_amplitude": primary.rms_amplitude
+            if primary.rms_amplitude is not None
+            else waveform.rms_amplitude,
+            "peak_amplitude": primary.peak_amplitude
+            if primary.peak_amplitude is not None
+            else waveform.peak_amplitude,
+            "zero_crossing_rate": primary.zero_crossing_rate
+            if primary.zero_crossing_rate is not None
+            else waveform.zero_crossing_rate,
+        }
+    )
+
+
 def analyze_recording(
     path: Path,
     *,
@@ -100,7 +119,10 @@ def analyze_recording(
 
         if parselmouth_engine.available:
             try:
-                metrics = analyze_with_parselmouth(analysis_path)
+                metrics = merge_basic_waveform_metrics(
+                    analyze_with_parselmouth(analysis_path),
+                    analyze_wav_basic(analysis_path),
+                )
                 engine = parselmouth_engine
                 warnings = conversion_warnings
             except Exception as exc:

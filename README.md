@@ -8,7 +8,7 @@ The main HearForSpeech app stays local-first and offline-capable at `https://hea
 
 - Upload one speech recording and prompt text.
 - Run local Python analysis using Parselmouth/Praat when installed.
-- Flag conservative possible speech-sound error patterns from scripted prompts, acoustics, and optional phone-candidate output.
+- Flag ranked, conservative possible speech-sound error patterns from scripted prompts, word position, acoustics, and optional phone-candidate output.
 - Return structured JSON that the HearForSpeech PWA can import into an editable assessment/session note.
 - Keep raw audio temporary by default.
 
@@ -39,7 +39,7 @@ Open:
 - Every response includes `X-HFS-Request-ID`; callers can also send that header to correlate frontend and server logs.
 - `/v1/capabilities` returns upload limits, accepted audio types, and clinician-workflow notes.
 - Analysis responses include `review_facts`, which are deterministic metric facts for SLP review only.
-- Speech-sound pattern responses include `possible_errors`, which are candidate patterns such as possible distortion, omission, substitution, cluster reduction, or recording-quality/intelligibility flags.
+- Speech-sound pattern responses include `possible_errors`, which are candidate patterns such as possible distortion, omission, substitution, cluster reduction, or recording-quality/intelligibility flags. Candidates can include the scripted word, word position, inventory category, review score, and evidence for SLP confirmation.
 - Configure limits with:
 
 ```bash
@@ -59,10 +59,10 @@ docker run --rm -p 8000:8000 hearforspeech-server
 `POST /v1/analysis/speech-sound-patterns` accepts one recording plus the prompt text the patient read or imitated. The endpoint returns:
 
 - Parselmouth/basic acoustic metrics
-- Expected targets parsed from scripted words or `/phoneme/` markers
+- Expected targets parsed from scripted words, `/phoneme/` markers, word position, and common adolescent inventory prompts
 - Optional Allosaurus phone candidates when Allosaurus is installed
 - MFA availability status for future forced-alignment configuration
-- Conservative `possible_errors` for SLP review
+- Ranked conservative `possible_errors` for SLP review with word/context/evidence fields when available
 
 The best results come from scripted prompts such as:
 
@@ -70,7 +70,7 @@ The best results come from scripted prompts such as:
 Say red, rabbit, ring, car, star, sun, zoo, shoe, chair, jump, thin, this, street, tree.
 ```
 
-Returned candidates are not diagnoses. The SLP should replay the recording and confirm/ignore each candidate before documentation.
+Returned candidates are not diagnoses. A higher score only moves a candidate up the review list; it is not an accuracy percentage or diagnostic conclusion. The SLP should replay the recording and confirm/ignore each candidate before documentation.
 
 ## Fly Deployment CI
 
