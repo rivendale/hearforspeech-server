@@ -1,26 +1,25 @@
 ## Summary
 
-Hardens the analysis API contract with request IDs, capability limits, batch-size limits, and deterministic review facts for the frontend Diagnostic Portal.
+Adds GitHub Actions deployment automation for the Fly-hosted HearForSpeech analysis API.
 
 ## What changed
 
-- Adds `X-HFS-Request-ID` and `X-HFS-Processing-Ms` response headers.
-- Allows callers to send `X-HFS-Request-ID` for frontend/backend correlation.
-- Adds capability `limits` and clinician workflow notes to `/v1/capabilities`.
-- Adds configurable `HFS_MAX_BATCH_FILES`.
-- Enforces batch file-count limits on `POST /v1/analysis/assessment-session`.
-- Adds deterministic `review_facts` to single and batch analysis responses.
-- Adds tests for request IDs, limits, and review facts.
+- Adds `.github/workflows/fly-deploy.yml`.
+- Deploys automatically on pushes to `main`.
+- Allows manual deployment through `workflow_dispatch`.
+- Uses `flyctl deploy --remote-only` and `fly.toml`.
+- Verifies production health at `https://api.hearforspeech.com/health`.
+- Documents the required `FLY_API_TOKEN` GitHub secret.
 
 ## Why this helps SLPs
 
-The frontend can show safer, clearer analysis state: objective facts for clinician review, visible upload limits, and request IDs for support/debugging without storing clinical records on the server.
+Backend analysis improvements become available through the app immediately after merge, instead of relying on a manual deploy step.
 
 ## Data/privacy notes
 
-- Raw audio remains temporary processing input.
-- Review facts are objective acoustic descriptors only.
-- No third-party analytics, server-side client record storage, or external AI calls are added.
+- No API behavior, data retention, or analysis processing changes are included.
+- The service remains temporary-processing only by default.
+- No cloud record storage, analytics, or external AI calls are added.
 
 ## Testing performed
 
@@ -29,6 +28,5 @@ The frontend can show safer, clearer analysis state: objective facts for clinici
 
 ## Known limitations / follow-up ideas
 
-- MFA forced alignment remains the next major analysis engine.
-- Review facts are deterministic metrics, not automated interpretation.
-- Long-running job persistence is still future work.
+- The GitHub repo needs a `FLY_API_TOKEN` secret before the workflow can deploy.
+- Future work could add deployment status badges and post-deploy capability smoke tests.

@@ -51,6 +51,18 @@ docker build -t hearforspeech-server .
 docker run --rm -p 8000:8000 hearforspeech-server
 ```
 
+## Fly Deployment CI
+
+The repository includes `.github/workflows/fly-deploy.yml`. It deploys automatically whenever `main` is updated and can also be run manually from GitHub Actions.
+
+Required GitHub repository secret:
+
+```bash
+FLY_API_TOKEN=fly_api_token_with_deploy_access
+```
+
+The workflow deploys with `flyctl deploy --remote-only` using `fly.toml`, then verifies `https://api.hearforspeech.com/health`.
+
 ## Privacy Model
 
 The PWA should show consent before upload. This server treats uploaded audio as temporary processing input and returns metrics only. Deployers are responsible for TLS, access controls, retention, logging policy, BAAs/DPAs if applicable, and HIPAA/FERPA review.
