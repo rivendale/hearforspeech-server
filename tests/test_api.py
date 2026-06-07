@@ -84,8 +84,16 @@ def test_speech_sound_pattern_analysis_returns_review_candidates() -> None:
     assert payload["status"] == "complete"
     assert payload["request_id"] == response.headers["x-hfs-request-id"]
     assert payload["possible_errors"]
-    assert any(candidate["target"] == "/r/" for candidate in payload["possible_errors"])
-    assert any(candidate["target"] == "clusters" for candidate in payload["possible_errors"])
+    assert any(
+        candidate["target"] == "/r/" and candidate["target_word"] in {"red", "car", "star"}
+        for candidate in payload["possible_errors"]
+    )
+    assert any(
+        candidate["target"] == "clusters" and candidate["word_position"] == "initial cluster"
+        for candidate in payload["possible_errors"]
+    )
+    assert all(0 <= candidate["score"] <= 1 for candidate in payload["possible_errors"])
+    assert all(candidate["evidence"] for candidate in payload["possible_errors"])
     assert any(fact["label"] == "Expected speech targets" for fact in payload["review_facts"])
     assert "SLP" in payload["clinician_summary"]
     assert "diagnose" in payload["clinical_notice"]

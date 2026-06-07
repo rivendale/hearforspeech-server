@@ -55,6 +55,9 @@ class AnalysisFact(BaseModel):
 
 class SpeechSoundCandidate(BaseModel):
     target: str
+    target_word: str | None = None
+    word_position: str | None = None
+    category: str | None = None
     expected: str | None = None
     observed: str | None = None
     error_type: Literal[
@@ -66,6 +69,7 @@ class SpeechSoundCandidate(BaseModel):
         "needs_review",
     ]
     confidence: Literal["low", "medium", "high"]
+    score: float = Field(ge=0, le=1, default=0.25)
     evidence: list[str] = Field(default_factory=list)
     start_seconds: float | None = None
     end_seconds: float | None = None
