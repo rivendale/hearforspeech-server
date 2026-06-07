@@ -26,6 +26,7 @@ def test_health() -> None:
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+    assert response.headers["x-hfs-request-id"]
 
 
 def test_capabilities() -> None:
@@ -35,6 +36,9 @@ def test_capabilities() -> None:
     assert payload["service"] == "hearforspeech-server"
     assert "POST /v1/analysis/parselmouth" in payload["endpoints"]
     assert "POST /v1/analysis/assessment-session" in payload["endpoints"]
+    assert payload["limits"]["max_upload_mb"] > 0
+    assert payload["limits"]["max_batch_files"] > 0
+    assert payload["workflow_notes"]
 
 
 def test_analysis_requires_consent() -> None:
@@ -57,6 +61,8 @@ def test_analysis_returns_metrics() -> None:
     assert payload["status"] == "complete"
     assert payload["prompt_text"] == "Say red"
     assert payload["metrics"]["duration_seconds"] > 0
+    assert payload["request_id"] == response.headers["x-hfs-request-id"]
+    assert payload["review_facts"]
     assert "diagnose" in payload["clinical_notice"]
 
 
@@ -96,9 +102,11 @@ def test_assessment_session_analysis_returns_line_results() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "complete"
+    assert payload["request_id"] == response.headers["x-hfs-request-id"]
     assert payload["assessment_id"] == "assessment-1"
     assert payload["analyzed_items"] == 1
     assert payload["item_results"][0]["status"] == "complete"
     assert payload["item_results"][0]["analysis"]["metrics"]["duration_seconds"] > 0
+    assert payload["item_results"][0]["review_facts"]
     assert payload["item_results"][1]["status"] == "no_recording"
     assert "diagnose" in payload["clinical_notice"]

@@ -10,12 +10,21 @@ class EngineInfo(BaseModel):
     note: str | None = None
 
 
+class CapabilityLimits(BaseModel):
+    max_upload_mb: int
+    max_batch_files: int
+    default_retention: Literal["temporary"] = "temporary"
+    accepted_audio_types: list[str] = Field(default_factory=list)
+
+
 class CapabilitiesResponse(BaseModel):
     service: str = "hearforspeech-server"
     version: str
     default_retention: Literal["temporary"] = "temporary"
     engines: list[EngineInfo]
     endpoints: list[str]
+    limits: CapabilityLimits | None = None
+    workflow_notes: list[str] = Field(default_factory=list)
     clinical_notice: str
 
 
@@ -36,14 +45,24 @@ class AcousticMetrics(BaseModel):
     shimmer_local: float | None = None
 
 
+class AnalysisFact(BaseModel):
+    label: str
+    value: str
+    unit: str | None = None
+    source: str
+    caution: str | None = None
+
+
 class AnalysisResult(BaseModel):
     job_id: str
+    request_id: str | None = None
     status: Literal["complete", "failed"]
     prompt_text: str
     filename: str
     content_type: str | None
     engine: EngineInfo
     metrics: AcousticMetrics | None
+    review_facts: list[AnalysisFact] = Field(default_factory=list)
     warnings: list[str]
     clinician_summary: str
     clinical_notice: str
@@ -73,10 +92,12 @@ class AssessmentSessionItemResult(BaseModel):
     analysis: AnalysisResult | None = None
     warnings: list[str]
     summary_facts: list[str]
+    review_facts: list[AnalysisFact] = Field(default_factory=list)
 
 
 class AssessmentSessionAnalysisResult(BaseModel):
     job_id: str
+    request_id: str | None = None
     status: Literal["complete", "partial", "failed"]
     assessment_id: str | None = None
     client_label: str | None = None

@@ -32,6 +32,18 @@ Open:
 - `GET http://127.0.0.1:8000/health`
 - `GET http://127.0.0.1:8000/v1/capabilities`
 
+## API Hardening
+
+- Every response includes `X-HFS-Request-ID`; callers can also send that header to correlate frontend and server logs.
+- `/v1/capabilities` returns upload limits, accepted audio types, and clinician-workflow notes.
+- Analysis responses include `review_facts`, which are deterministic metric facts for SLP review only.
+- Configure limits with:
+
+```bash
+HFS_MAX_UPLOAD_MB=50
+HFS_MAX_BATCH_FILES=40
+```
+
 ## Docker
 
 ```bash

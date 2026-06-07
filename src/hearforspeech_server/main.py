@@ -1,12 +1,15 @@
 import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from time import perf_counter
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
+from starlette.middleware.base import RequestResponseEndpoint
+from starlette.responses import Response
 
 from hearforspeech_server import __version__
 from hearforspeech_server.analysis import analyze_recording
@@ -19,6 +22,7 @@ from hearforspeech_server.schemas import (
     AssessmentSessionInput,
     AssessmentSessionItemResult,
     CapabilitiesResponse,
+    CapabilityLimits,
     EngineInfo,
 )
 from hearforspeech_server.settings import Settings, get_settings
@@ -41,6 +45,18 @@ app.add_middleware(
 
 SettingsDependency = Annotated[Settings, Depends(get_settings)]
 ApiKeyHeader = Annotated[str | None, Header()]
+MAX_FACTS_PER_ITEM = 8
+
+
+@app.middleware("http")
+async def add_request_id(request: Request, call_next: RequestResponseEndpoint) -> Response:
+    request_id = request.headers.get("X-HFS-Request-ID") or str(uuid4())
+    request.state.request_id = request_id
+    start_time = perf_counter()
+    response = await call_next(request)
+    response.headers["X-HFS-Request-ID"] = request_id
+    response.headers["X-HFS-Processing-Ms"] = str(round((perf_counter() - start_time) * 1000, 2))
+    return response
 
 
 def require_api_key(settings: SettingsDependency, x_hfs_api_key: ApiKeyHeader = None) -> None:
@@ -52,12 +68,17 @@ def require_api_key(settings: SettingsDependency, x_hfs_api_key: ApiKeyHeader = 
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "service": "hearforspeech-server", "version": __version__}
+def health(request: Request) -> dict[str, str]:
+    return {
+        "status": "ok",
+        "service": "hearforspeech-server",
+        "version": __version__,
+        "request_id": request.state.request_id,
+    }
 
 
 @app.get("/v1/capabilities", response_model=CapabilitiesResponse)
-def capabilities() -> CapabilitiesResponse:
+def capabilities(settings: SettingsDependency) -> CapabilitiesResponse:
     return CapabilitiesResponse(
         version=__version__,
         engines=[
@@ -78,6 +99,22 @@ def capabilities() -> CapabilitiesResponse:
             "GET /v1/capabilities",
             "POST /v1/analysis/parselmouth",
             "POST /v1/analysis/assessment-session",
+        ],
+        limits=CapabilityLimits(
+            max_upload_mb=settings.max_upload_mb,
+            max_batch_files=settings.max_batch_files,
+            accepted_audio_types=[
+                "audio/wav",
+                "audio/webm",
+                "audio/mp4",
+                "audio/mpeg",
+                "audio/ogg",
+            ],
+        ),
+        workflow_notes=[
+            "Use scripted-prompt uploads for best future forced-alignment support.",
+            "Use returned review_facts as supporting facts for clinician review, not conclusions.",
+            "Temporary processing only; do not send audio without consent.",
         ],
         clinical_notice=CLINICAL_NOTICE,
     )
@@ -116,6 +153,10 @@ def metric_fact(result: AnalysisResult) -> str:
     if metrics.voiced_fraction is not None:
         parts.append(f"voiced fraction {metrics.voiced_fraction:.2f}")
     return "; ".join(parts)
+
+
+def attach_request_id(result: AnalysisResult, request_id: str) -> AnalysisResult:
+    return result.model_copy(update={"request_id": request_id})
 
 
 async def analyze_upload(
@@ -158,6 +199,7 @@ async def analyze_upload(
 
 @app.post("/v1/analysis/parselmouth", response_model=AnalysisResult)
 async def run_parselmouth_analysis(
+    request: Request,
     file: Annotated[UploadFile, File()],
     consent_confirmed: Annotated[bool, Form()],
     _: Annotated[None, Depends(require_api_key)],
@@ -167,11 +209,13 @@ async def run_parselmouth_analysis(
 ) -> AnalysisResult:
     validate_analysis_request(consent_confirmed, retention_policy)
 
-    return await analyze_upload(file, settings=settings, prompt_text=prompt_text)
+    result = await analyze_upload(file, settings=settings, prompt_text=prompt_text)
+    return attach_request_id(result, request.state.request_id)
 
 
 @app.post("/v1/analysis/assessment-session", response_model=AssessmentSessionAnalysisResult)
 async def run_assessment_session_analysis(
+    request: Request,
     consent_confirmed: Annotated[bool, Form()],
     _: Annotated[None, Depends(require_api_key)],
     settings: SettingsDependency,
@@ -190,6 +234,12 @@ async def run_assessment_session_analysis(
         ) from exc
 
     uploads = files or []
+    if len(uploads) > settings.max_batch_files:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Batch upload exceeds {settings.max_batch_files} file limit.",
+        )
+
     uploads_by_key = {
         upload_lookup_key(file.filename): file
         for file in uploads
@@ -231,7 +281,10 @@ async def run_assessment_session_analysis(
 
         used_keys.add(upload_key)
         try:
-            analysis = await analyze_upload(upload, settings=settings, prompt_text=item.prompt)
+            analysis = attach_request_id(
+                await analyze_upload(upload, settings=settings, prompt_text=item.prompt),
+                request.state.request_id,
+            )
             facts = [*item_facts, metric_fact(analysis)]
             item_results.append(
                 AssessmentSessionItemResult(
@@ -241,6 +294,7 @@ async def run_assessment_session_analysis(
                     analysis=analysis,
                     warnings=analysis.warnings,
                     summary_facts=facts,
+                    review_facts=analysis.review_facts[:MAX_FACTS_PER_ITEM],
                 )
             )
             summary_ready_facts.extend(facts)
@@ -277,6 +331,7 @@ async def run_assessment_session_analysis(
 
     return AssessmentSessionAnalysisResult(
         job_id=str(uuid4()),
+        request_id=request.state.request_id,
         status=session_status,
         assessment_id=assessment.assessment_id,
         client_label=assessment.client_label,
