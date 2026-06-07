@@ -5,10 +5,15 @@ import shutil
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from importlib.util import find_spec
+from os import getenv
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
+from hearforspeech_server.analysis.calibration import (
+    apply_calibration_to_candidates,
+    build_calibration_profile,
+)
 from hearforspeech_server.analysis.pipeline import (
     CLINICAL_NOTICE,
     analyze_recording,
@@ -17,9 +22,11 @@ from hearforspeech_server.analysis.pipeline import (
 from hearforspeech_server.schemas import (
     AcousticMetrics,
     AnalysisFact,
+    CalibrationProfile,
     EngineInfo,
     SpeechSoundAnalysisResult,
     SpeechSoundCandidate,
+    SpeechSoundReviewLabel,
 )
 
 SpeechErrorType = Literal[
@@ -227,18 +234,28 @@ def allosaurus_engine_info() -> EngineInfo:
 
 def mfa_engine_info() -> EngineInfo:
     executable = shutil.which("mfa")
+    acoustic_model = getenv("HFS_MFA_ACOUSTIC_MODEL")
+    dictionary = getenv("HFS_MFA_DICTIONARY")
+    configured = bool(executable and acoustic_model and dictionary)
+    if configured:
+        note = (
+            "Montreal Forced Aligner executable plus acoustic model/dictionary are "
+            "configured for future scripted-prompt alignment."
+        )
+    elif executable:
+        note = (
+            "Montreal Forced Aligner executable found. Set HFS_MFA_ACOUSTIC_MODEL and "
+            "HFS_MFA_DICTIONARY before enabling alignment-backed scoring."
+        )
+    else:
+        note = (
+            "Install Montreal Forced Aligner plus acoustic models/dictionaries for "
+            "forced alignment."
+        )
     return EngineInfo(
         name="mfa",
-        available=bool(executable),
-        note=(
-            "Montreal Forced Aligner executable found; scripted prompt alignment can be "
-            "enabled when acoustic models/dictionaries are configured."
-            if executable
-            else (
-                "Install Montreal Forced Aligner plus acoustic models/dictionaries for "
-                "forced alignment."
-            )
-        ),
+        available=configured,
+        note=note,
     )
 
 
@@ -559,6 +576,7 @@ def analyze_speech_sound_patterns(
     prompt_text: str,
     filename: str,
     content_type: str | None,
+    calibration_labels: list[SpeechSoundReviewLabel] | None = None,
 ) -> SpeechSoundAnalysisResult:
     acoustic = analyze_recording(
         path,
@@ -569,11 +587,17 @@ def analyze_speech_sound_patterns(
     phone_candidates, phone_warnings = recognize_phone_candidates(path)
     expected_occurrences = target_occurrences_from_prompt(prompt_text)
     expected_targets = list(dict.fromkeys(item.target for item in expected_occurrences))
+    calibration_profile: CalibrationProfile | None = (
+        build_calibration_profile(calibration_labels)
+        if calibration_labels is not None
+        else None
+    )
     possible_errors = rough_acoustic_candidates(
         acoustic.metrics,
         expected_occurrences,
         phone_candidates,
     )
+    possible_errors = apply_calibration_to_candidates(possible_errors, calibration_profile)
     engines = [acoustic.engine, allosaurus_engine_info(), mfa_engine_info()]
     review_facts: list[AnalysisFact] = [
         *build_review_facts(acoustic.metrics, acoustic.engine),
@@ -600,6 +624,18 @@ def analyze_speech_sound_patterns(
                 caution="Beta exploratory output; may be inaccurate.",
             )
         )
+    if calibration_profile is not None:
+        review_facts.append(
+            AnalysisFact(
+                label="SLP calibration labels",
+                value=calibration_profile.summary,
+                source="slp-local-labels",
+                caution=(
+                    "Labels tune review ranking only. They are local workflow data, not a "
+                    "validated diagnostic model."
+                ),
+            )
+        )
 
     warnings = [*acoustic.warnings, *phone_warnings]
     if not expected_targets:
@@ -624,6 +660,7 @@ def analyze_speech_sound_patterns(
         metrics=acoustic.metrics,
         possible_errors=possible_errors,
         review_facts=review_facts,
+        calibration_profile=calibration_profile,
         warnings=warnings,
         clinician_summary=summary,
         clinical_notice=CLINICAL_NOTICE,

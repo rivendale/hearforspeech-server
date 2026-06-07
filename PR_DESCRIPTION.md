@@ -1,23 +1,24 @@
 ## Summary
 
-Improves the speech-sound analyzer behind the simple **Record → Stop → Analyze** workflow so review items are more target-specific and easier for an SLP to confirm.
+Adds SLP-labeled calibration support behind the simple **Record → Stop → Analyze** workflow so confirmed clinician review can tune future candidate ranking.
 
 ## What changed
 
-- Adds word-level target parsing for common adolescent inventory prompts, word positions, clusters, residual sounds, and sibilants.
-- Returns richer `possible_errors` with `target_word`, `word_position`, `category`, `score`, and evidence fields.
-- Ranks possible distortion, omission, substitution, cluster reduction, and recording-quality/intelligibility candidates for faster SLP review.
-- Merges basic waveform metrics with Parselmouth metrics so recordings keep useful amplitude/zero-crossing facts even when Praat metrics are available.
-- Uses Allosaurus phone candidates when installed while keeping output beta/exploratory and SLP-reviewed.
-- Updates API docs, README, and tests for the enriched candidate schema.
+- Adds `POST /v1/analysis/calibration-profile` for summarizing local SLP review labels.
+- Allows `POST /v1/analysis/speech-sound-patterns` to receive optional `calibration_json`.
+- Applies small conservative score-ranking adjustments when at least two confirmed/ruled-out labels exist for a target/error pattern.
+- Returns `calibration_profile` and `SLP calibration labels` review facts when labels are supplied.
+- Surfaces MFA readiness only when the executable plus acoustic model/dictionary configuration are present.
+- Documents optional MFA/Allosaurus setup and no-server-storage calibration boundaries.
 
 ## Why this helps SLPs
 
-The frontend can now present more useful “possible speech-sound errors” immediately after recording: which scripted word/position needs review, why it was flagged, and how strongly it should be prioritized. The clinician can replay the sample and confirm or ignore each candidate.
+The frontend can now send SLP-confirmed labels back with future analysis requests so the analyzer learns which candidate patterns are useful for that patient/workflow. This improves review ordering while keeping final interpretation under clinician control.
 
 ## Data/privacy notes
 
 - Upload handling remains consent-gated and temporary-processing only.
+- Calibration labels are request payloads only; the hosted API does not store them.
 - No cloud record storage, third-party analytics, or external AI calls are added.
 - Candidate error patterns are not diagnoses, eligibility decisions, or replacements for SLP judgment.
 
@@ -28,6 +29,6 @@ The frontend can now present more useful “possible speech-sound errors” imme
 
 ## Known limitations / follow-up ideas
 
-- MFA alignment requires acoustic models/dictionaries before true timestamps can be added.
+- MFA alignment still needs validated acoustic model/dictionary deployment before timestamps can be added.
 - Allosaurus output is optional and exploratory; production deployments need dependency/model validation.
-- Future work can add MFA timestamps, calibrated target-specific acoustic models for /r/, sibilants, clusters, and phonological-process summaries.
+- Future work can use exported SLP-labeled samples to validate target-specific acoustic models for /r/, sibilants, clusters, and phonological-process summaries.
