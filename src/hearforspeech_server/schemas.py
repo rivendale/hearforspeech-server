@@ -49,5 +49,44 @@ class AnalysisResult(BaseModel):
     clinical_notice: str
 
 
+class AssessmentSessionItemInput(BaseModel):
+    id: str
+    prompt: str
+    section_title: str | None = None
+    kind: str | None = None
+    result: str | None = None
+    notes: str | None = None
+    cue_level: str | None = None
+    recording_filename: str | None = None
+
+
+class AssessmentSessionInput(BaseModel):
+    assessment_id: str | None = None
+    client_label: str | None = None
+    items: list[AssessmentSessionItemInput]
+
+
+class AssessmentSessionItemResult(BaseModel):
+    item_id: str
+    prompt: str
+    status: Literal["complete", "no_recording", "failed"]
+    analysis: AnalysisResult | None = None
+    warnings: list[str]
+    summary_facts: list[str]
+
+
+class AssessmentSessionAnalysisResult(BaseModel):
+    job_id: str
+    status: Literal["complete", "partial", "failed"]
+    assessment_id: str | None = None
+    client_label: str | None = None
+    total_items: int
+    analyzed_items: int
+    item_results: list[AssessmentSessionItemResult]
+    summary_ready_facts: list[str]
+    warnings: list[str]
+    clinical_notice: str
+
+
 class ErrorResponse(BaseModel):
     detail: str

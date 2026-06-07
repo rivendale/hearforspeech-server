@@ -9,6 +9,7 @@ Current API contract
 - GET /health returns service status and version.
 - GET /v1/capabilities returns available engines, endpoints, retention mode, and clinical notice.
 - POST /v1/analysis/parselmouth accepts one uploaded audio recording and returns acoustic metrics JSON.
+- POST /v1/analysis/assessment-session accepts checklist JSON plus multiple uploaded recordings and returns per-line analysis results plus summary-ready facts.
 
 POST /v1/analysis/parselmouth form fields
 - file: uploaded audio file. Browser WebM and WAV should remain supported; ffmpeg converts non-WAV input when available.
@@ -16,6 +17,13 @@ POST /v1/analysis/parselmouth form fields
 - consent_confirmed: must be true.
 - retention_policy: temporary.
 - X-HFS-API-Key: optional header when HFS_API_KEY is configured.
+
+POST /v1/analysis/assessment-session form fields
+- assessment_json: JSON with assessment_id, optional client_label, and items.
+- files: one or more audio uploads. Use the assessment item id as the filename stem, for example `line-id.webm`.
+- consent_confirmed: must be true.
+- retention_policy: temporary.
+- Return item-level statuses rather than hiding partial failures.
 
 Clinical and privacy rules
 - Returned values are objective acoustic descriptors, not diagnosis, eligibility, or treatment decisions.
